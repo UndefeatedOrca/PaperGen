@@ -75,6 +75,8 @@ Double-click `install_context_menu.reg` and confirm the prompt.
 
 Run Manage Classes (see Usage below) and click **Edit Profile** to enter your first name, last name, and university. You only do this once — it pre-fills every new class you add.
 
+Example profile and class data are provided in `profile.example.json` and `classes.example.json`. Copy them to `profile.json` and `classes.json` if you want to try the application with sample data. The runtime JSON files are local user data and are excluded from version control.
+
 ---
 
 ## Usage
@@ -193,3 +195,9 @@ Delete the `PaperGen` key.
 **Typst package not found** — run `typst init @preview/modern-mla` in the folder containing your `.typ` file, or open the file in the Typst web app.
 
 **LaTeX package not found** — run `tlmgr install turabian-formatting` (TeX Live) or use the MiKTeX package manager to install `turabian-formatting`.
+
+---
+
+## License
+
+PaperGen is licensed under the [MIT License](LICENSE).
