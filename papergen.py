@@ -13,19 +13,32 @@ from docx import Document
 
 APPDATA = Path(os.environ.get("APPDATA", Path.home())) / "PaperGen"
 CLASSES_FILE = APPDATA / "classes.json"
+PROFILE_FILE = APPDATA / "profile.json"
 TEMPLATES_DIR = APPDATA / "templates"
 
 APPDATA.mkdir(parents=True, exist_ok=True)
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# ── Schema migration ──────────────────────────────────────────────────────────
+# ── Profile ───────────────────────────────────────────────────────────────────
+def load_profile():
+    if not PROFILE_FILE.exists():
+        return {"name_first": "", "name_last": "", "university": ""}
+    with open(PROFILE_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_profile(profile):
+    with open(PROFILE_FILE, "w", encoding="utf-8") as f:
+        json.dump(profile, f, indent=2, ensure_ascii=False)
+
+
+# ── Classes ───────────────────────────────────────────────────────────────────
 def migrate_class(cls):
     """
     Migrate old single-field schema to split fields.
-    Old: class_number = "PHIL 101", school = "College of Arts"
-    New: class_code = "PHIL", class_number = "101",
-         school = "College of Arts", university = ""
+    Old: class_number = "PHIL 101"
+    New: class_code = "PHIL", class_number = "101"
     """
     changed = False
     if "class_code" not in cls:
@@ -62,11 +75,11 @@ def list_templates():
 
 
 def class_label(cls):
-    code = cls.get("class_code", "")
-    num  = cls.get("class_number", "")
-    name = cls.get("class_name", "")
+    code   = cls.get("class_code", "")
+    num    = cls.get("class_number", "")
+    name   = cls.get("class_name", "")
     prefix = f"{code} {num}".strip()
-    return f"{prefix} — {name}" if prefix else name
+    return f"{prefix} \u2014 {name}" if prefix else name
 
 
 # ── Document generation ───────────────────────────────────────────────────────
@@ -93,17 +106,20 @@ def generate_paper(cls, template_name, title, due_date, output_folder):
     if not template_path.exists():
         raise FileNotFoundError(f"Template not found: {template_path}")
 
+    profile = load_profile()
     class_full = f"{cls.get('class_code', '')} {cls.get('class_number', '')}".strip()
 
     placeholders = {
         "{{your_name}}":      cls.get("your_name", ""),
+        "{{name_first}}":     profile.get("name_first", ""),
+        "{{name_last}}":      profile.get("name_last", ""),
         "{{professor_name}}": cls.get("professor_name", ""),
         "{{class_name}}":     cls.get("class_name", ""),
         "{{class_code}}":     cls.get("class_code", ""),
         "{{class_number}}":   cls.get("class_number", ""),
         "{{class_full}}":     class_full,
         "{{school}}":         cls.get("school", ""),
-        "{{university}}":     cls.get("university", ""),
+        "{{university}}":     cls.get("university", "") or profile.get("university", ""),
         "{{paper_title}}":    title,
         "{{due_date}}":       due_date,
     }
@@ -112,28 +128,27 @@ def generate_paper(cls, template_name, title, due_date, output_folder):
 
     for para in doc.paragraphs:
         replace_in_paragraph(para, placeholders)
-
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
                 for para in cell.paragraphs:
                     replace_in_paragraph(para, placeholders)
-
     for section in doc.sections:
         for para in section.header.paragraphs:
             replace_in_paragraph(para, placeholders)
         for para in section.footer.paragraphs:
             replace_in_paragraph(para, placeholders)
 
-    your_name = cls.get("your_name", "")
-    name_parts = your_name.strip().split()
-    if len(name_parts) >= 2:
-        name_prefix = f"{name_parts[-1]}{name_parts[0]}"
-    else:
-        name_prefix = "".join(name_parts)
-    safe_title = "".join(c for c in title if c.isalnum() or c in " ").title().replace(" ", "")
-    filename = f"{name_prefix}{safe_title}.docx"
-    out_path = Path(output_folder) / filename
+    # Filename: prefer profile name parts, fall back to parsing your_name
+    first = profile.get("name_first", "").strip()
+    last  = profile.get("name_last", "").strip()
+    if not first or not last:
+        parts = cls.get("your_name", "").strip().split()
+        last  = parts[-1] if len(parts) >= 2 else "".join(parts)
+        first = parts[0]  if len(parts) >= 2 else ""
+    name_prefix = f"{last}{first}"
+    safe_title  = "".join(c for c in title if c.isalnum() or c in " ").title().replace(" ", "")
+    out_path    = Path(output_folder) / f"{name_prefix}{safe_title}.docx"
     doc.save(str(out_path))
     return out_path
 
@@ -164,7 +179,7 @@ class NewPaperWindow:
     def __init__(self, output_folder):
         self.output_folder = output_folder
         self.root = tk.Tk()
-        self.root.title("PaperGen — New Paper")
+        self.root.title("PaperGen \u2014 New Paper")
         self.root.resizable(False, False)
         self._build()
         self._center()
@@ -178,13 +193,13 @@ class NewPaperWindow:
             row=1, column=0, columnspan=2, padx=16, sticky="w")
         hsep(root).grid(row=2, column=0, columnspan=2, sticky="ew", padx=16, pady=6)
 
-        classes = load_classes()
+        classes  = load_classes()
         templates = list_templates()
 
-        self.class_var = tk.StringVar()
+        self.class_var    = tk.StringVar()
         self.template_var = tk.StringVar()
-        self.title_var = tk.StringVar()
-        self.date_var = tk.StringVar(value=date.today().strftime("%B %d, %Y"))
+        self.title_var    = tk.StringVar()
+        self.date_var     = tk.StringVar(value=date.today().strftime("%B %d, %Y"))
 
         if not classes:
             messagebox.showwarning("No Classes",
@@ -198,10 +213,10 @@ class NewPaperWindow:
 
         self._class_dropdown = dropdown(root, class_labels, self.class_var)
         fields = [
-            ("Class", self._class_dropdown),
+            ("Class",           self._class_dropdown),
             ("Template / Style", dropdown(root, templates, self.template_var)),
-            ("Paper Title", entry(root, self.title_var)),
-            ("Due Date", entry(root, self.date_var)),
+            ("Paper Title",     entry(root, self.title_var)),
+            ("Due Date",        entry(root, self.date_var)),
         ]
 
         for i, (label_text, widget) in enumerate(fields):
@@ -299,7 +314,8 @@ class ManageClassesWindow:
         hsep(root).pack(fill="x", padx=16, pady=6)
         btns = tk.Frame(root)
         btns.pack(padx=16, pady=(0, 12), fill="x")
-        btn(btns, "+ Add Class", self._add).pack(side="left")
+        btn(btns, "+ Add Class",    self._add).pack(side="left")
+        btn(btns, "Edit Profile",   self._edit_profile).pack(side="left", padx=(8, 0))
         btn(btns, "Clear Semester", self._clear, fg="red").pack(side="right")
 
     def _render_list(self):
@@ -322,13 +338,16 @@ class ManageClassesWindow:
             acts = tk.Frame(row)
             acts.pack(side="right")
             btn(acts, "Delete", lambda i=i: self._delete(i), fg="red").pack(side="right", padx=2)
-            btn(acts, "Edit", lambda i=i: self._edit(i)).pack(side="right", padx=2)
+            btn(acts, "Edit",   lambda i=i: self._edit(i)).pack(side="right", padx=2)
 
     def _add(self):
         ClassFormDialog(self.root, on_save=self._on_save)
 
     def _edit(self, idx):
         ClassFormDialog(self.root, on_save=self._on_save, existing=load_classes()[idx], idx=idx)
+
+    def _edit_profile(self):
+        ProfileFormDialog(self.root)
 
     def _on_save(self, data, idx=None):
         classes = load_classes()
@@ -370,6 +389,50 @@ class ManageClassesWindow:
         self.root.mainloop()
 
 
+# ── Profile Form Dialog ───────────────────────────────────────────────────────
+class ProfileFormDialog(tk.Toplevel):
+    FIELDS = [
+        ("name_first", "First Name"),
+        ("name_last",  "Last Name"),
+        ("university", "University (external)"),
+    ]
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Edit Profile")
+        self.resizable(True, False)
+        self.grab_set()
+
+        profile = load_profile()
+        self.vars = {k: tk.StringVar(value=profile.get(k, "")) for k, _ in self.FIELDS}
+
+        lbl(self, "Profile", bold=True).pack(padx=16, pady=(12, 2), anchor="w")
+        lbl(self, "Pre-fills new classes. Provides {{name_first}} and {{name_last}}.",
+            fg="gray").pack(padx=16, anchor="w")
+
+        form = tk.Frame(self)
+        form.pack(padx=16, pady=(8, 0), fill="x", expand=True)
+        form.grid_columnconfigure(0, weight=1)
+        for i, (key, display) in enumerate(self.FIELDS):
+            lbl(form, display).grid(row=i*2, column=0, sticky="w", pady=(6, 1))
+            entry(form, self.vars[key], width=48).grid(row=i*2+1, column=0, sticky="ew")
+
+        hsep(self).pack(fill="x", padx=16, pady=10)
+        btns = tk.Frame(self)
+        btns.pack(padx=16, pady=(0, 12), fill="x")
+        btn(btns, "Cancel", self.destroy).pack(side="left")
+        btn(btns, "Save", self._save).pack(side="right")
+
+        self.update_idletasks()
+        w, h = self.winfo_width(), self.winfo_height()
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        self.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+
+    def _save(self):
+        save_profile({k: v.get().strip() for k, v in self.vars.items()})
+        self.destroy()
+
+
 # ── Class Form Dialog ─────────────────────────────────────────────────────────
 class ClassFormDialog(tk.Toplevel):
     FIELDS = [
@@ -390,8 +453,18 @@ class ClassFormDialog(tk.Toplevel):
         self.resizable(True, False)
         self.grab_set()
 
-        self.vars = {k: tk.StringVar(value=existing.get(k, "") if existing else "")
-                     for k, _ in self.FIELDS}
+        # Pre-populate from profile when adding a new class
+        profile = load_profile()
+        profile_name = f"{profile.get('name_first', '')} {profile.get('name_last', '')}".strip()
+        defaults = {
+            "your_name":  profile_name,
+            "university": profile.get("university", ""),
+        }
+
+        self.vars = {
+            k: tk.StringVar(value=existing.get(k, "") if existing else defaults.get(k, ""))
+            for k, _ in self.FIELDS
+        }
 
         lbl(self, "Edit Class" if existing else "Add Class", bold=True).pack(
             padx=16, pady=(12, 8), anchor="w")
