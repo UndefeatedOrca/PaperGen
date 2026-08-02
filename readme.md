@@ -112,6 +112,31 @@ The older `--manage` option remains supported.
 - **Clear Semester** — removes all classes at once
 - **Filename Convention** — set the filename format using `{{last name}}`, `{{first name}}`, `{{class code}}`, `{{class number}}`, and `{{title}}`
 
+## Building the Windows Installer
+
+The repository includes a PyInstaller spec and an Inno Setup script for creating a distributable Windows installer.
+
+Build prerequisites:
+
+- Python 3.10+
+- Inno Setup 6 or 7
+
+From the repository root, run:
+
+```
+py -3 -m venv .venv-build
+.\.venv-build\Scripts\python.exe -m pip install -r requirements-build.txt
+build.bat
+```
+
+The finished installer is written to:
+
+```
+dist\installer\PaperGenSetup.exe
+```
+
+The `build\`, `dist\`, and `.venv-build\` directories are local build artifacts and are excluded from Git. Upload `PaperGenSetup.exe` to a GitHub Release rather than committing the generated folders to the repository. See `RELEASING.md` for the release checklist.
+
 ---
 
 ## Placeholders

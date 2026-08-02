@@ -3,3 +3,6 @@
 /classes.json
 /config.json
 __pycache__/
+.venv-build/
+/build/
+/dist/
