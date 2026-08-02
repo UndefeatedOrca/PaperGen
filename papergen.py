@@ -1,5 +1,6 @@
 """
 PaperGen - Academic Paper Template Generator
+Supports .docx, .typ (Typst), and .tex (LaTeX) templates.
 """
 
 import sys
@@ -19,6 +20,8 @@ TEMPLATES_DIR = APPDATA / "templates"
 APPDATA.mkdir(parents=True, exist_ok=True)
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 
+SUPPORTED_EXTS = (".docx", ".typ", ".tex")
+
 
 # ── Profile ───────────────────────────────────────────────────────────────────
 def load_profile():
@@ -35,11 +38,6 @@ def save_profile(profile):
 
 # ── Classes ───────────────────────────────────────────────────────────────────
 def migrate_class(cls):
-    """
-    Migrate old single-field schema to split fields.
-    Old: class_number = "PHIL 101"
-    New: class_code = "PHIL", class_number = "101"
-    """
     changed = False
     if "class_code" not in cls:
         old = cls.get("class_number", "")
@@ -71,7 +69,11 @@ def save_classes(classes):
 
 
 def list_templates():
-    return sorted(p.stem for p in TEMPLATES_DIR.glob("*.docx"))
+    """Return sorted list of full filenames for all supported template types."""
+    templates = []
+    for ext in SUPPORTED_EXTS:
+        templates.extend(p.name for p in TEMPLATES_DIR.glob(f"*{ext}"))
+    return sorted(templates)
 
 
 def class_label(cls):
@@ -83,33 +85,10 @@ def class_label(cls):
 
 
 # ── Document generation ───────────────────────────────────────────────────────
-def replace_in_paragraph(para, placeholders):
-    """
-    Merge all runs into full text, replace placeholders, write back into
-    first run and clear the rest. Handles Word splitting text across runs.
-    """
-    if not para.runs:
-        return
-    full_text = "".join(run.text for run in para.runs)
-    replaced = full_text
-    for key, val in placeholders.items():
-        replaced = replaced.replace(key, val)
-    if replaced == full_text:
-        return
-    para.runs[0].text = replaced
-    for run in para.runs[1:]:
-        run.text = ""
-
-
-def generate_paper(cls, template_name, title, due_date, output_folder):
-    template_path = TEMPLATES_DIR / f"{template_name}.docx"
-    if not template_path.exists():
-        raise FileNotFoundError(f"Template not found: {template_path}")
-
-    profile = load_profile()
+def build_placeholders(cls, title, due_date):
+    profile    = load_profile()
     class_full = f"{cls.get('class_code', '')} {cls.get('class_number', '')}".strip()
-
-    placeholders = {
+    return {
         "{{your_name}}":      cls.get("your_name", ""),
         "{{name_first}}":     profile.get("name_first", ""),
         "{{name_last}}":      profile.get("name_last", ""),
@@ -124,8 +103,37 @@ def generate_paper(cls, template_name, title, due_date, output_folder):
         "{{due_date}}":       due_date,
     }
 
-    doc = Document(str(template_path))
 
+def build_output_name(cls, title, ext):
+    profile = load_profile()
+    first   = profile.get("name_first", "").strip()
+    last    = profile.get("name_last", "").strip()
+    if not first or not last:
+        parts = cls.get("your_name", "").strip().split()
+        last  = parts[-1] if len(parts) >= 2 else "".join(parts)
+        first = parts[0]  if len(parts) >= 2 else ""
+    name_prefix = f"{last}{first}"
+    safe_title  = "".join(c for c in title if c.isalnum() or c in " ").title().replace(" ", "")
+    return f"{name_prefix}{safe_title}{ext}"
+
+
+def replace_in_paragraph(para, placeholders):
+    """Handles Word splitting placeholders across multiple runs."""
+    if not para.runs:
+        return
+    full_text = "".join(run.text for run in para.runs)
+    replaced  = full_text
+    for key, val in placeholders.items():
+        replaced = replaced.replace(key, val)
+    if replaced == full_text:
+        return
+    para.runs[0].text = replaced
+    for run in para.runs[1:]:
+        run.text = ""
+
+
+def generate_docx(cls, template_path, placeholders, output_path):
+    doc = Document(str(template_path))
     for para in doc.paragraphs:
         replace_in_paragraph(para, placeholders)
     for table in doc.tables:
@@ -138,18 +146,34 @@ def generate_paper(cls, template_name, title, due_date, output_folder):
             replace_in_paragraph(para, placeholders)
         for para in section.footer.paragraphs:
             replace_in_paragraph(para, placeholders)
+    doc.save(str(output_path))
 
-    # Filename: prefer profile name parts, fall back to parsing your_name
-    first = profile.get("name_first", "").strip()
-    last  = profile.get("name_last", "").strip()
-    if not first or not last:
-        parts = cls.get("your_name", "").strip().split()
-        last  = parts[-1] if len(parts) >= 2 else "".join(parts)
-        first = parts[0]  if len(parts) >= 2 else ""
-    name_prefix = f"{last}{first}"
-    safe_title  = "".join(c for c in title if c.isalnum() or c in " ").title().replace(" ", "")
-    out_path    = Path(output_folder) / f"{name_prefix}{safe_title}.docx"
-    doc.save(str(out_path))
+
+def generate_text(template_path, placeholders, output_path):
+    """Plain-text substitution for .typ and .tex templates."""
+    text = template_path.read_text(encoding="utf-8")
+    for key, val in placeholders.items():
+        text = text.replace(key, val)
+    output_path.write_text(text, encoding="utf-8")
+
+
+def generate_paper(cls, template_filename, title, due_date, output_folder):
+    """Dispatch to the right generator based on template extension."""
+    template_path = TEMPLATES_DIR / template_filename
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template not found: {template_path}")
+
+    ext          = template_path.suffix.lower()
+    placeholders = build_placeholders(cls, title, due_date)
+    out_path     = Path(output_folder) / build_output_name(cls, title, ext)
+
+    if ext == ".docx":
+        generate_docx(cls, template_path, placeholders, out_path)
+    elif ext in (".typ", ".tex"):
+        generate_text(template_path, placeholders, out_path)
+    else:
+        raise ValueError(f"Unsupported template type: {ext}")
+
     return out_path
 
 
@@ -193,7 +217,7 @@ class NewPaperWindow:
             row=1, column=0, columnspan=2, padx=16, sticky="w")
         hsep(root).grid(row=2, column=0, columnspan=2, sticky="ew", padx=16, pady=6)
 
-        classes  = load_classes()
+        classes   = load_classes()
         templates = list_templates()
 
         self.class_var    = tk.StringVar()
@@ -206,17 +230,18 @@ class NewPaperWindow:
                 "No classes found. Add one via Manage Classes.", parent=root)
         if not templates:
             messagebox.showwarning("No Templates",
-                f"No .docx templates found in:\n{TEMPLATES_DIR}", parent=root)
+                f"No templates found in:\n{TEMPLATES_DIR}\n\n"
+                "Supported: .docx, .typ, .tex", parent=root)
 
         class_labels = [class_label(c) for c in classes]
         self._classes = classes
 
         self._class_dropdown = dropdown(root, class_labels, self.class_var)
         fields = [
-            ("Class",           self._class_dropdown),
+            ("Class",            self._class_dropdown),
             ("Template / Style", dropdown(root, templates, self.template_var)),
-            ("Paper Title",     entry(root, self.title_var)),
-            ("Due Date",        entry(root, self.date_var)),
+            ("Paper Title",      entry(root, self.title_var)),
+            ("Due Date",         entry(root, self.date_var)),
         ]
 
         for i, (label_text, widget) in enumerate(fields):
@@ -262,7 +287,7 @@ class NewPaperWindow:
             self.class_var.set("")
 
     def _generate(self):
-        classes = load_classes()
+        classes      = load_classes()
         class_labels = [class_label(c) for c in classes]
 
         if not self.class_var.get():
@@ -276,7 +301,7 @@ class NewPaperWindow:
         try:
             out = generate_paper(
                 cls=classes[idx],
-                template_name=self.template_var.get(),
+                template_filename=self.template_var.get(),
                 title=self.title_var.get().strip(),
                 due_date=self.date_var.get().strip(),
                 output_folder=self.output_folder,
@@ -453,7 +478,6 @@ class ClassFormDialog(tk.Toplevel):
         self.resizable(True, False)
         self.grab_set()
 
-        # Pre-populate from profile when adding a new class
         profile = load_profile()
         profile_name = f"{profile.get('name_first', '')} {profile.get('name_last', '')}".strip()
         defaults = {
