@@ -13,6 +13,7 @@ Generates pre-filled academic paper files from templates via a right-click conte
 ├── install_context_menu.reg  — adds right-click menu entry to Explorer
 ├── profile.json              — your name and university (stable across classes)
 ├── classes.json              — your saved class profiles
+├── config.json               — local filename configuration
 └── templates\
     ├── mla.docx              — (example)
     ├── turabian.typ          — (example)
@@ -73,9 +74,11 @@ Double-click `install_context_menu.reg` and confirm the prompt.
 
 ### 4. Set up your profile
 
-Run Manage Classes (see Usage below) and click **Edit Profile** to enter your first name, last name, and university. You only do this once — it pre-fills every new class you add.
+Open Configuration (see Usage below) and click **Edit Profile** to enter your first name, last name, and university. You only do this once — it pre-fills every new class you add.
 
 Example profile and class data are provided in `profile.example.json` and `classes.example.json`. Copy them to `profile.json` and `classes.json` if you want to try the application with sample data. The runtime JSON files are local user data and are excluded from version control.
+
+To customize generated filenames, copy `config.example.json` to `config.json` and edit `filename_format`. The default is `{{last name}}{{title}}`, which produces names such as `SmithOnFreeWill.typ`. Supported tokens are `{{last name}}`, `{{first name}}`, `{{class code}}`, `{{class number}}`, and `{{title}}`; title uses the existing punctuation and space stripping logic. The template extension is appended automatically.
 
 ---
 
@@ -91,20 +94,23 @@ Right-click any folder background (not on a file) → **New Paper from Template*
 4. Confirm or change the due date
 5. Click **Generate**
 
-The output file appears in the folder you right-clicked. The filename format is `LastFirstTitleNoSpaces` with the same extension as the template (e.g. `SmithPatrickOnFreeWill.typ`).
+The output file appears in the folder you right-clicked. By default, the filename format is `LastTitleNoSpaces` with the same extension as the template (e.g. `SmithOnFreeWill.typ`). See `config.example.json` to customize the filename format.
 
-### Manage Classes
+### Configuration
 
-Click **Manage Classes** from the New Paper window, or run:
+Click **Configuration** from the New Paper window, or run:
 ```
-python papergen.py --manage
+python papergen.py --config
 ```
+
+The older `--manage` option remains supported.
 
 - **Add Class** — opens a form pre-filled with your profile name and university; fill in the rest
 - **Edit** — modify a saved class
 - **Delete** — remove a single class
 - **Edit Profile** — update your name or university (affects pre-fill for new classes, and the `{{name_first}}` / `{{name_last}}` placeholders)
 - **Clear Semester** — removes all classes at once
+- **Filename Convention** — set the filename format using `{{last name}}`, `{{first name}}`, `{{class code}}`, `{{class number}}`, and `{{title}}`
 
 ---
 
@@ -170,7 +176,7 @@ The Turabian LaTeX template (`turabian.tex`) uses the `turabian-formatting` pack
 
 ## Semester Turnover
 
-At the end of each semester, open Manage Classes and click **Clear Semester** to remove all classes at once. Your profile (name, university) is preserved.
+At the end of each semester, open Configuration and click **Clear Semester** to remove all classes at once. Your profile (name, university) is preserved.
 
 ---
 

@@ -15,12 +15,14 @@ from docx import Document
 APPDATA = Path(os.environ.get("APPDATA", Path.home())) / "PaperGen"
 CLASSES_FILE = APPDATA / "classes.json"
 PROFILE_FILE = APPDATA / "profile.json"
+CONFIG_FILE = APPDATA / "config.json"
 TEMPLATES_DIR = APPDATA / "templates"
 
 APPDATA.mkdir(parents=True, exist_ok=True)
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 
-SUPPORTED_EXTS = (".docx", ".typ", ".tex")
+SUPPORTED_EXTS = (".docx", ".tex", ".typ")
+DEFAULT_FILENAME_FORMAT = "{{last name}}{{title}}"
 
 
 # ── Profile ───────────────────────────────────────────────────────────────────
@@ -34,6 +36,22 @@ def load_profile():
 def save_profile(profile):
     with open(PROFILE_FILE, "w", encoding="utf-8") as f:
         json.dump(profile, f, indent=2, ensure_ascii=False)
+
+
+def load_config():
+    if not CONFIG_FILE.exists():
+        return {"filename_format": DEFAULT_FILENAME_FORMAT}
+    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    filename_format = config.get("filename_format", DEFAULT_FILENAME_FORMAT)
+    if not isinstance(filename_format, str) or not filename_format.strip():
+        filename_format = DEFAULT_FILENAME_FORMAT
+    return {"filename_format": filename_format}
+
+
+def save_config(config):
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
 
 
 # ── Classes ───────────────────────────────────────────────────────────────────
@@ -69,11 +87,12 @@ def save_classes(classes):
 
 
 def list_templates():
-    """Return sorted list of full filenames for all supported template types."""
+    """Return templates grouped by type, alphabetized within each type."""
     templates = []
     for ext in SUPPORTED_EXTS:
-        templates.extend(p.name for p in TEMPLATES_DIR.glob(f"*{ext}"))
-    return sorted(templates)
+        names = (p.name for p in TEMPLATES_DIR.glob(f"*{ext}"))
+        templates.extend(sorted(names, key=str.casefold))
+    return templates
 
 
 def class_label(cls):
@@ -112,9 +131,25 @@ def build_output_name(cls, title, ext):
         parts = cls.get("your_name", "").strip().split()
         last  = parts[-1] if len(parts) >= 2 else "".join(parts)
         first = parts[0]  if len(parts) >= 2 else ""
-    name_prefix = f"{last}{first}"
     safe_title  = "".join(c for c in title if c.isalnum() or c in " ").title().replace(" ", "")
-    return f"{name_prefix}{safe_title}{ext}"
+    filename_format = load_config()["filename_format"]
+    replacements = {
+        "{{last name}}":  last,
+        "{{first name}}": first,
+        "{{class code}}":  cls.get("class_code", ""),
+        "{{class number}}": cls.get("class_number", ""),
+        "{{title}}":      safe_title,
+    }
+    filename = filename_format
+    for placeholder, value in replacements.items():
+        filename = filename.replace(placeholder, value)
+
+    invalid = '<>:"/\\|?*'
+    filename = "".join(c for c in filename if c not in invalid and ord(c) >= 32)
+    filename = filename.strip().rstrip(".")
+    if not filename:
+        filename = safe_title or "paper"
+    return f"{filename}{ext}"
 
 
 def replace_in_paragraph(para, placeholders):
@@ -227,7 +262,7 @@ class NewPaperWindow:
 
         if not classes:
             messagebox.showwarning("No Classes",
-                "No classes found. Add one via Manage Classes.", parent=root)
+                "No classes found. Add one via Configuration.", parent=root)
         if not templates:
             messagebox.showwarning("No Templates",
                 f"No templates found in:\n{TEMPLATES_DIR}\n\n"
@@ -262,7 +297,7 @@ class NewPaperWindow:
 
         btns = tk.Frame(root)
         btns.grid(row=r+1, column=0, columnspan=2, padx=16, pady=(0, 12), sticky="ew")
-        btn(btns, "Manage Classes", self._open_manage).pack(side="left")
+        btn(btns, "Configuration", self._open_configuration).pack(side="left")
         btn(btns, "Generate", self._generate).pack(side="right")
 
     def _center(self):
@@ -271,11 +306,11 @@ class NewPaperWindow:
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         self.root.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
-    def _open_manage(self):
+    def _open_configuration(self):
         self.root.withdraw()
-        ManageClassesWindow(on_close=self._on_manage_close)
+        ConfigurationWindow(on_close=self._on_configuration_close)
 
-    def _on_manage_close(self):
+    def _on_configuration_close(self):
         self.root.deiconify()
         classes = load_classes()
         class_labels = [class_label(c) for c in classes]
@@ -315,12 +350,12 @@ class NewPaperWindow:
         self.root.mainloop()
 
 
-# ── Manage Classes Window ─────────────────────────────────────────────────────
-class ManageClassesWindow:
+# ── Configuration Window ─────────────────────────────────────────────────────
+class ConfigurationWindow:
     def __init__(self, on_close=None):
         self.on_close = on_close
         self.root = tk.Toplevel() if on_close else tk.Tk()
-        self.root.title("PaperGen \u2014 Manage Classes")
+        self.root.title("PaperGen \u2014 Configuration")
         self.root.resizable(False, False)
         self._build()
         self._center()
@@ -328,20 +363,47 @@ class ManageClassesWindow:
 
     def _build(self):
         root = self.root
-        lbl(root, "Manage Classes", bold=True).pack(padx=16, pady=(12, 2), anchor="w")
-        lbl(root, str(CLASSES_FILE), fg="gray").pack(padx=16, anchor="w")
+        lbl(root, "Configuration", bold=True).pack(padx=16, pady=(12, 2), anchor="w")
+        lbl(root, f"Classes: {CLASSES_FILE}", fg="gray").pack(padx=16, anchor="w")
+        lbl(root, f"Settings: {CONFIG_FILE}", fg="gray").pack(padx=16, anchor="w")
         hsep(root).pack(fill="x", padx=16, pady=6)
 
+        lbl(root, "Classes", bold=True).pack(padx=16, anchor="w")
         self.list_frame = tk.Frame(root)
         self.list_frame.pack(padx=16, fill="both")
         self._render_list()
 
-        hsep(root).pack(fill="x", padx=16, pady=6)
-        btns = tk.Frame(root)
-        btns.pack(padx=16, pady=(0, 12), fill="x")
-        btn(btns, "+ Add Class",    self._add).pack(side="left")
-        btn(btns, "Edit Profile",   self._edit_profile).pack(side="left", padx=(8, 0))
-        btn(btns, "Clear Semester", self._clear, fg="red").pack(side="right")
+        class_btns = tk.Frame(root)
+        class_btns.pack(padx=16, pady=(6, 0), fill="x")
+        btn(class_btns, "+ Add Class",    self._add).pack(side="left")
+        btn(class_btns, "Edit Profile",   self._edit_profile).pack(side="left", padx=(8, 0))
+        btn(class_btns, "Clear Semester", self._clear, fg="red").pack(side="right")
+
+        hsep(root).pack(fill="x", padx=16, pady=10)
+        lbl(root, "Filename Convention", bold=True).pack(padx=16, anchor="w")
+        lbl(root, "Tokens: {{last name}}, {{first name}}, {{class code}}, {{class number}}, {{title}}",
+            fg="gray").pack(padx=16, anchor="w")
+
+        self.filename_format_var = tk.StringVar(
+            value=load_config()["filename_format"])
+        filename_form = tk.Frame(root)
+        filename_form.pack(padx=16, pady=(8, 0), fill="x")
+        lbl(filename_form, "Filename format").pack(side="left")
+        entry(filename_form, self.filename_format_var, width=34).pack(
+            side="left", padx=(10, 0), fill="x", expand=True)
+
+        config_btns = tk.Frame(root)
+        config_btns.pack(padx=16, pady=(6, 12), fill="x")
+        btn(config_btns, "Save Filename Format", self._save_filename_format).pack(side="right")
+
+    def _save_filename_format(self):
+        filename_format = self.filename_format_var.get().strip()
+        if not filename_format:
+            messagebox.showerror(
+                "Required", "Filename format cannot be empty.", parent=self.root)
+            return
+        save_config({"filename_format": filename_format})
+        messagebox.showinfo("Saved", "Filename convention saved.", parent=self.root)
 
     def _render_list(self):
         for w in self.list_frame.winfo_children():
@@ -522,11 +584,11 @@ class ClassFormDialog(tk.Toplevel):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    if len(sys.argv) >= 2 and sys.argv[1] != "--manage":
+    if len(sys.argv) >= 2 and sys.argv[1] not in ("--manage", "--config"):
         output_folder = sys.argv[1]
         if not os.path.isdir(output_folder):
             messagebox.showerror("Error", f"Invalid folder:\n{output_folder}")
             sys.exit(1)
         NewPaperWindow(output_folder).run()
     else:
-        ManageClassesWindow().run()
+        ConfigurationWindow().run()
