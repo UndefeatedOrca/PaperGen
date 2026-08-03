@@ -4,24 +4,6 @@ Generates pre-filled academic paper files from templates via a right-click conte
 
 ---
 
-## Files
-
-```
-%APPDATA%\PaperGen\
-├── papergen.py               — main application
-├── templategen.py            — generates starter templates (run once)
-├── install_context_menu.reg  — adds right-click menu entry to Explorer
-├── profile.json              — your name and university (stable across classes)
-├── classes.json              — your saved class profiles
-├── config.json               — local filename configuration
-└── templates\
-    ├── mla.docx              — (example)
-    ├── turabian.typ          — (example)
-    └── mla.tex               — (example)
-```
-
----
-
 ## Requirements
 
 - Windows 10 or 11
@@ -37,42 +19,21 @@ Generates pre-filled academic paper files from templates via a right-click conte
 
 ## Setup
 
-### 1. Place files
+### 1. Run the installer
 
-Copy `papergen.py` and `templategen.py` into `%APPDATA%\PaperGen\`.
-
-Tip: paste `%APPDATA%\PaperGen` into the File Explorer address bar to navigate there.
+Download the latest release and run the .exe.
 
 ### 2. Add templates
 
 Place your `.docx`, `.typ`, or `.tex` template files in `%APPDATA%\PaperGen\templates\`.
 
-**Option A — Generate starter templates:**
-```
-python templategen.py
-```
-This creates `mla.docx`, `turabian.docx`, `mla.typ`, `turabian.typ`, `turabian.tex`, and `mla.tex` in the templates folder.
+**Option A — Use starter templates:**
+The extension comes preloaded with a number of common used citation formats as template files. I have not confirmed the efficacy of the Latex and Typst formatted files, so if they don't work, sorry :(.  
 
 **Option B — Use your own existing templates:**
 Open each file and replace blank header fields with the placeholders listed below.
 
-### 3. Install the right-click menu
-
-Open `install_context_menu.reg` in Notepad and confirm the path on this line points to where you placed `papergen.py`:
-
-```
-@="C:\\Python314\\pythonw.exe \"C:\\Users\\YourName\\AppData\\Roaming\\PaperGen\\papergen.py\" \"%V\""
-```
-
-Update the Python path if needed — find yours by running:
-```
-python -c "import sys; print(sys.executable)"
-```
-Replace `python.exe` with `pythonw.exe` in that path.
-
-Double-click `install_context_menu.reg` and confirm the prompt.
-
-### 4. Set up your profile
+### 3. Set up your profile
 
 Open Configuration (see Usage below) and click **Edit Profile** to enter your first name, last name, and university. You only do this once — it pre-fills every new class you add.
 
@@ -111,33 +72,6 @@ The older `--manage` option remains supported.
 - **Edit Profile** — update your name or university (affects pre-fill for new classes, and the `{{name_first}}` / `{{name_last}}` placeholders)
 - **Clear Semester** — removes all classes at once
 - **Filename Convention** — set the filename format using `{{last name}}`, `{{first name}}`, `{{class code}}`, `{{class number}}`, and `{{title}}`
-
-## Building the Windows Installer
-
-The repository includes a PyInstaller spec and an Inno Setup script for creating a distributable Windows installer.
-
-Build prerequisites:
-
-- Python 3.10+
-- Inno Setup 6 or 7
-
-From the repository root, run:
-
-```
-py -3 -m venv .venv-build
-.\.venv-build\Scripts\python.exe -m pip install -r requirements-build.txt
-build.bat
-```
-
-The finished installer is written to:
-
-```
-dist\installer\PaperGenSetup.exe
-```
-
-The `build\`, `dist\`, and `.venv-build\` directories are local build artifacts and are excluded from Git. Upload `PaperGenSetup.exe` to a GitHub Release rather than committing the generated folders to the repository. See `RELEASING.md` for the release checklist.
-
----
 
 ## Placeholders
 
@@ -205,13 +139,9 @@ At the end of each semester, open Configuration and click **Clear Semester** to 
 
 ---
 
-## Uninstalling the Right-Click Menu
+## Uninstalling 
 
-Open Registry Editor (`regedit`), navigate to:
-```
-HKEY_CLASSES_ROOT\Directory\Background\shell\
-```
-Delete the `PaperGen` key.
+Uninstall in the apps menu of settings. Alternatively, delete the registry key in PATH.
 
 ---
 
