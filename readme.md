@@ -7,11 +7,6 @@ Generates pre-filled academic paper files from templates via a right-click conte
 ## Requirements
 
 - Windows 10 or 11
-- Python 3.10+ — download from https://python.org (check "Add Python to PATH")
-- `python-docx` — install with:
-  ```
-  pip install python-docx
-  ```
 - For `.typ` templates: [Typst](https://typst.app) CLI or app
 - For `.tex` templates: TeX Live or MiKTeX
 
